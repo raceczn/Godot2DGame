@@ -4,7 +4,7 @@ extends CharacterBody2D
 @export var gravity = 30
 @export var jump_force = 500
 @export var dash_speed = 800
-@export var dash_duration = 0.2  # in seconds
+@export var dash_duration = 0.2  
 
 @onready var anim_player = $AnimationPlayer
 @onready var sprite = $Sprite2D  
@@ -24,7 +24,7 @@ var dash_direction := 0
 func _physics_process(delta):
 	is_pushing = false
 
-	# Handle dash logic first
+	# DASH
 	if is_dashing:
 		dash_time_left -= delta
 		velocity.x = dash_direction * dash_speed
@@ -33,7 +33,7 @@ func _physics_process(delta):
 		if dash_time_left <= 0:
 			is_dashing = false
 	else:
-		# Separated attacks
+		# ATTACKS
 		if Input.is_action_just_pressed("attack2") and !is_attacking:
 			anim_player.play("attack2")
 			is_attacking = true
