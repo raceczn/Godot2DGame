@@ -3,6 +3,8 @@ extends CharacterBody2D
 @export var speed = 400
 @export var gravity = 30
 @export var jump_force = 500
+@export var dash_speed = 800
+@export var dash_duration = 0.2  # in seconds
 
 @onready var anim_player = $AnimationPlayer
 @onready var sprite = $Sprite2D  
@@ -12,67 +14,87 @@ const RUN_THRESHOLD := 1.5
 var is_running := false
 var is_pushing := false
 var is_attacking := false
-
 var can_double_jump := false
 
-# Dash detection vars
-var did_dash := false
+# Dash state
+var is_dashing := false
+var dash_time_left := 0.0
+var dash_direction := 0
 
 func _physics_process(delta):
-	is_pushing = false  # Reset at start of frame
-	did_dash = false    # Reset dash flag
+	is_pushing = false
 
-	# Dash via input map
-	if Input.is_action_just_pressed("dash"):
-		anim_player.play("dash")
-		if sprite.flip_h:
-			velocity.x = -speed * 2  # reduced from 4 to 2
-		else:
-			velocity.x = speed * 2   # reduced from 4 to 2
-		did_dash = true
+	# Handle dash logic first
+	if is_dashing:
+		dash_time_left -= delta
+		velocity.x = dash_direction * dash_speed
+		velocity.y = 0
 
-	# Slash attack logic
-	if Input.is_action_just_pressed("attack") and !is_attacking:
-		anim_player.play("slash_attack")
-		is_attacking = true
+		if dash_time_left <= 0:
+			is_dashing = false
+	else:
+		# Separated attacks
+		if Input.is_action_just_pressed("attack2") and !is_attacking:
+			anim_player.play("attack2")
+			is_attacking = true
 
-	if is_attacking:
-		if not anim_player.is_playing() or anim_player.current_animation != "slash_attack":
-			is_attacking = false
-		return
+		elif Input.is_action_just_pressed("attack") and !is_attacking:
+			anim_player.play("slash_attack")
+			is_attacking = true
 
-	# Apply gravity
-	if !is_on_floor():
-		velocity.y += gravity
-		if velocity.y > 1000:
-			velocity.y = 1000
+		if is_attacking:
+			if not anim_player.is_playing():
+				is_attacking = false
+			return
 
-	# Reset double jump when grounded
-	if is_on_floor():
-		can_double_jump = true
+		# Gravity
+		if !is_on_floor():
+			velocity.y += gravity
+			if velocity.y > 1000:
+				velocity.y = 1000
 
-	# Jump and Double Jump logic
-	if Input.is_action_just_pressed("jump"):
+		# Reset double jump
 		if is_on_floor():
-			velocity.y = -jump_force
-			anim_player.play("jump")
-		elif can_double_jump:
-			velocity.y = -jump_force
-			anim_player.play("double_jump")
-			can_double_jump = false
+			can_double_jump = true
 
-	# Horizontal movement
-	var horizontal_direction = Input.get_axis("move_left", "move_right")
-	velocity.x = speed * horizontal_direction
+		# Jump / Double Jump
+		if Input.is_action_just_pressed("jump"):
+			if is_on_floor():
+				velocity.y = -jump_force
+				anim_player.play("jump")
+			elif can_double_jump:
+				velocity.y = -jump_force
+				anim_player.play("double_jump")
+				can_double_jump = false
 
-	# Flip the sprite
-	if horizontal_direction != 0:
-		sprite.flip_h = horizontal_direction < 0
+		# Horizontal input
+		var horizontal_direction = Input.get_axis("move_left", "move_right")
+		velocity.x = speed * horizontal_direction
+
+		# Dash Input
+		if Input.is_action_just_pressed("dash"):
+			is_dashing = true
+			dash_time_left = dash_duration
+			dash_direction = -1 if sprite.flip_h else 1
+			anim_player.play("dash")
+			return
+
+		# Flip sprite
+		if horizontal_direction != 0:
+			sprite.flip_h = horizontal_direction < 0
+
+		# Walk/run tracking
+		if horizontal_direction != 0:
+			walk_timer += delta
+			is_running = walk_timer >= RUN_THRESHOLD
+		else:
+			is_running = false
+			walk_timer = 0
 
 	# Move the character
 	move_and_slide()
 
-	# Push rigid bodies
+	# Push logic
 	for i in get_slide_collision_count():
 		var collision = get_slide_collision(i)
 		var collider = collision.get_collider()
@@ -80,32 +102,20 @@ func _physics_process(delta):
 		if collider is RigidBody2D:
 			var push_dir = collision.get_normal() * -1.0
 			collider.apply_central_impulse(push_dir * 50)
-			if horizontal_direction != 0:
-				is_pushing = true
+			is_pushing = true
 
-	# Track walk/run
-	if horizontal_direction != 0:
-		walk_timer += delta
-		is_running = walk_timer >= RUN_THRESHOLD
-	else:
-		is_running = false
-		walk_timer = 0
-
-	# Animation logic
-	if !is_on_floor():
-		# animation already handled in jump section
+	# Animations
+	if is_dashing:
+		anim_player.play("dash")
+	elif !is_on_floor():
 		pass
 	elif is_pushing:
 		anim_player.play("push")
-	elif Input.is_action_pressed("move_down") and horizontal_direction != 0:
+	elif Input.is_action_pressed("move_down") and velocity.x != 0:
 		anim_player.play("slide")
-		# walk_timer = 0  # ← removed to preserve run after sliding
-	elif did_dash:
-		pass  # already playing dash, don't override
-	elif horizontal_direction != 0:
+	elif abs(velocity.x) > 0:
 		anim_player.play("run" if is_running else "walk")
 	else:
 		anim_player.play("idle")
-		walk_timer = 0
 
-	print("Velocity:", velocity, " CanDoubleJump:", can_double_jump)
+	print("Velocity:", velocity, " Dashing:", is_dashing, " DoubleJump:", can_double_jump)
